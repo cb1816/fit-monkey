@@ -163,6 +163,7 @@ h1 em{font-style:normal;background:linear-gradient(90deg,var(--pink),var(--orang
 .prefcols{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media (max-width:480px){.prefcols{grid-template-columns:1fr}}
 .prefcols .field input{margin-top:4px}
+.linkbtn{background:none;border:0;padding:0;color:var(--violet);font:700 13px var(--body);cursor:pointer;text-decoration:underline}
 .mh .pk{font-size:12px;font-weight:700;color:var(--muted);text-transform:none;letter-spacing:0}
 .mrow{display:flex;gap:8px;flex-wrap:wrap}
 .chip.ghost{background:var(--surface);color:var(--mc);border:2px solid var(--mc)}
@@ -760,6 +761,163 @@ async function makeDiet(){
     st(c==="not_granted"?"Serve il tuo permesso per far preparare la dieta a Claude.":c==="rate_limited"?"Troppe richieste: riprova tra qualche minuto.":"Non sono riuscita a preparare il menu, riprova.",true);
   }finally{menuBusy=false;const b=$("mkDiet");if(b)b.disabled=false}
 }
+/* ---------- offline food database + estimator ---------- */
+/* [aliases, kcal/100g, prot/100g, default grams per unit, unit label, default qty] */
+const FOODDB=[
+ [["caffe latte","caffellatte","caffelatte","latte macchiato"],47,3.3,200,"tazza",1],
+ [["matcha latte"],50,3,200,"tazza",1],
+ [["cappuccino","cappuccio"],47,3,150,"tazza",1],
+ [["caffe","espresso","caffe macchiato"],2,0.1,30,"tazzina",1],
+ [["latte di avena","latte d avena","latte avena"],45,1,200,"bicchiere",1],
+ [["latte di soia","latte soia"],40,3.3,200,"bicchiere",1],
+ [["latte"],47,3.3,200,"bicchiere",1],
+ [["te","the","tisana","infuso","tazza di te"],1,0,250,"tazza",1],
+ [["zucchero"],400,0,5,"cucchiaino",1],
+ [["miele"],304,0.3,10,"cucchiaino",1],
+ [["marmellata","confettura"],250,0.4,20,"cucchiaio",1],
+ [["nutella","crema spalmabile","crema alle nocciole"],539,6.3,15,"cucchiaio",1],
+ [["burro di arachidi","burro d arachidi"],590,25,15,"cucchiaio",1],
+ [["burro"],717,0.9,10,"velo",1],
+ [["fette biscottate","fetta biscottata","biscottate","biscottata"],410,11,8,"fetta",2],
+ [["gallette","galletta","gallette di riso"],380,8,8,"galletta",2],
+ [["biscotti","biscotto","frollini","frollino"],460,7,8,"biscotto",4],
+ [["cornetto","brioche","croissant"],410,7,60,"pezzo",1],
+ [["pancake"],220,6,50,"pancake",2],
+ [["muesli","granola","cereali","corn flakes","cornflakes"],400,9,40,"porzione",1],
+ [["fiocchi d avena","fiocchi di avena","avena","porridge"],370,13,40,"porzione",1],
+ [["pane integrale","fetta di pane integrale"],250,9,40,"fetta",1],
+ [["pane","fetta di pane","pagnotta","rosetta","michetta"],270,9,40,"fetta",1],
+ [["pancarre","pan carre","toast","tramezzino"],270,8,25,"fetta",2],
+ [["crackers","cracker"],430,10,25,"pacchetto",1],
+ [["grissini","grissino"],410,12,5,"grissino",4],
+ [["piadina"],300,8,100,"piadina",1],
+ [["panino"],270,9,90,"panino",1],
+ [["focaccia"],300,7,100,"pezzo",1],
+ [["trancio di pizza","fetta di pizza","pizzetta"],270,11,120,"trancio",1],
+ [["pizza margherita","pizza marinara","pizza"],270,11,300,"pizza",1],
+ [["pasta","spaghetti","penne","fusilli","rigatoni","linguine","tagliatelle","gnocchi"],355,12.5,80,"porzione",1],
+ [["lasagne","lasagna"],160,9,250,"porzione",1],
+ [["risotto"],170,4,250,"porzione",1],
+ [["riso"],350,7,70,"porzione",1],
+ [["couscous","cous cous","farro","orzo","quinoa"],360,12,70,"porzione",1],
+ [["patatine fritte","patate fritte"],300,3.5,150,"porzione",1],
+ [["patatine","chips"],540,6,30,"sacchetto",1],
+ [["patate"],80,2,200,"porzione",1],
+ [["albume","albumi"],52,11,33,"albume",1],
+ [["uova","uovo","frittata","strapazzate","uova strapazzate"],143,12.6,55,"uovo",1],
+ [["petto di pollo","pollo"],110,23,130,"porzione",1],
+ [["tacchino","fesa di tacchino"],107,24,130,"porzione",1],
+ [["hamburger","burger","polpette"],220,18,120,"porzione",1],
+ [["bistecca","tagliata","manzo","vitello","carne"],150,22,130,"porzione",1],
+ [["maiale","lonza","braciola"],150,21,130,"porzione",1],
+ [["salsiccia","wurstel","würstel"],300,14,100,"porzione",1],
+ [["salmone"],200,20,130,"porzione",1],
+ [["tonno"],190,25,80,"scatoletta",1],
+ [["merluzzo","orata","branzino","sogliola","nasello","pesce"],85,18,150,"porzione",1],
+ [["gamberi","gamberetti","calamari","seppie","polpo"],85,18,120,"porzione",1],
+ [["sushi","nigiri","uramaki","hosomaki"],150,6,30,"pezzo",8],
+ [["poke"],130,7,450,"bowl",1],
+ [["bresaola"],150,32,50,"porzione",1],
+ [["prosciutto crudo","speck"],270,26,50,"porzione",1],
+ [["prosciutto cotto","prosciutto"],140,19,50,"porzione",1],
+ [["salame","salumi","mortadella","coppa"],380,22,30,"porzione",1],
+ [["mozzarella","burrata","bufala"],250,18,125,"mozzarella",1],
+ [["parmigiano","grana"],390,33,20,"porzione",1],
+ [["ricotta"],145,9,100,"porzione",1],
+ [["fiocchi di latte"],100,12,150,"vasetto",1],
+ [["stracchino","crescenza","philadelphia","formaggio spalmabile"],300,18,50,"porzione",1],
+ [["formaggio","formaggi","pecorino","emmental","provola","scamorza","feta"],350,24,50,"porzione",1],
+ [["yogurt greco","greco"],75,9.5,170,"vasetto",1],
+ [["yogurt","yogurt bianco","yogurt alla frutta"],70,3.5,125,"vasetto",1],
+ [["skyr","kefir"],60,10,150,"vasetto",1],
+ [["ceci","lenticchie","fagioli","piselli","legumi","hummus","edamame"],120,8,150,"porzione",1],
+ [["insalata","valeriana","rucola","lattuga","songino","spinaci crudi","insalatina"],20,2,80,"porzione",1],
+ [["verdure","verdura","zucchine","melanzane","peperoni","broccoli","carote","pomodori","pomodorini","fagiolini","spinaci","cavolfiore","finocchi","asparagi","funghi","cetriolo","minestrone"],28,2,200,"porzione",1],
+ [["avocado"],160,2,150,"avocado",0.5],
+ [["banana"],89,1.1,120,"banana",1],
+ [["mela","mele"],52,0.3,180,"mela",1],
+ [["pera","pere"],57,0.4,180,"pera",1],
+ [["arancia","arance","mandarino","mandarini","clementine"],47,1,150,"frutto",1],
+ [["kiwi"],61,1.1,80,"kiwi",1],
+ [["fragole","frutti di bosco","mirtilli","lamponi"],40,0.8,120,"coppetta",1],
+ [["uva"],69,0.7,150,"grappolo",1],
+ [["pesca","pesche","albicocche","albicocca","prugne","susine","ciliegie","anguria","melone","ananas","mango","frutta"],50,0.7,150,"porzione",1],
+ [["mandorle","noci","nocciole","anacardi","pistacchi","frutta secca","noccioline","arachidi"],600,20,20,"manciata",1],
+ [["olive"],145,1,30,"porzione",1],
+ [["olio","olio d oliva","olio evo"],899,0,10,"cucchiaio",1],
+ [["maionese"],680,1,15,"cucchiaio",1],
+ [["ketchup","senape"],100,1,15,"cucchiaio",1],
+ [["pesto"],450,5,30,"cucchiaio",1],
+ [["sugo","salsa di pomodoro","passata"],40,1.5,100,"porzione",1],
+ [["tartine","tartina","stuzzichini","bruschetta","bruschette","crostini"],280,8,25,"pezzo",3],
+ [["gelato"],210,4,100,"coppetta",1],
+ [["cioccolato","cioccolata"],540,7,20,"quadratini",1],
+ [["torta","dolce","crostata","ciambella","tiramisu","dessert","pasticcino","pasticcini"],380,6,100,"fetta",1],
+ [["barretta","barretta proteica"],380,25,50,"barretta",1],
+ [["proteine in polvere","whey","shake proteico","frullato proteico"],380,75,30,"misurino",1],
+ [["spritz","aperol","hugo"],100,0,150,"bicchiere",1],
+ [["prosecco","bollicine","spumante"],75,0,120,"calice",1],
+ [["vino","calice"],85,0,150,"calice",1],
+ [["birra"],43,0.5,400,"birra media",1],
+ [["cocktail","mojito","gin tonic","negroni"],150,0,150,"cocktail",1],
+ [["succo","spremuta","succo di frutta"],45,0.5,200,"bicchiere",1],
+ [["coca cola","coca","aranciata","bibita","fanta","sprite"],42,0,330,"lattina",1]
+];
+const QWORDS={un:1,uno:1,una:1,"un'":1,mezzo:0.5,mezza:0.5,due:2,tre:3,quattro:4,cinque:5,sei:6,sette:7,otto:8,dieci:10,paio:2,qualche:3,doppio:2,doppia:2};
+const normTxt=t=>t.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9.,\s]/g," ").replace(/\s+/g," ").trim();
+function lev(a,b){if(a===b)return 0;const m=a.length,n=b.length;if(Math.abs(m-n)>2)return 9;let p=Array.from({length:n+1},(_,j)=>j);
+  for(let i=1;i<=m;i++){const c=[i];for(let j=1;j<=n;j++)c[j]=Math.min(p[j]+1,c[j-1]+1,p[j-1]+(a[i-1]===b[j-1]?0:1));p=c}return p[n]}
+function wordEq(w,a){if(w===a)return true;if(a.length<4)return false;const d=lev(w,a);return (a.length>=8&&w.length>=8)?d<=2:d<=1}
+const FOODIDX=(()=>{const out=[];FOODDB.forEach((f,fi)=>f[0].forEach(al=>{const w=normTxt(al).split(" ");out.push({w,fi})}));
+  return out.sort((x,y)=>y.w.length-x.w.length)})();
+function localEstimate(text){
+  const toks=normTxt(text).replace(/(\d)([a-z])/g,"$1 $2").split(" ").filter(Boolean);
+  const used=new Array(toks.length).fill(false), items=[];
+  for(const {w,fi} of FOODIDX){
+    for(let i=0;i+w.length<=toks.length;i++){
+      if(used.slice(i,i+w.length).some(Boolean))continue;
+      let ok=true;for(let j=0;j<w.length;j++)if(!wordEq(toks[i+j],w[j])){ok=false;break}
+      if(!ok)continue;
+      for(let j=0;j<w.length;j++)used[i+j]=true;
+      const f=FOODDB[fi];let qty=null,grams=null;
+      const look=[toks[i-1],toks[i-2],toks[i-3]].map(x=>x||"");
+      const after=[toks[i+w.length],toks[i+w.length+1]].map(x=>x||"");
+      const gramWord=x=>/^(g|gr|grammi|grammo|ml|cl)$/.test(x);
+      if(/^\d+([.,]\d+)?$/.test(after[0])&&gramWord(after[1]))grams=parseFloat(after[0].replace(",","."))*(after[1]==="cl"?10:1);
+      for(let k=0;k<3&&grams==null&&qty==null;k++){
+        const t=look[k];if(!t)continue;
+        if(gramWord(t)&&/^\d+([.,]\d+)?$/.test(look[k+1]||"")){grams=parseFloat(look[k+1].replace(",","."))*(t==="cl"?10:1);break}
+        if(/^(cucchiain[oi])$/.test(t)){const n=QWORDS[look[k+1]]||parseFloat(look[k+1])||1;grams=n*5;break}
+        if(/^(cucchiai[oi]?)$/.test(t)){const n=QWORDS[look[k+1]]||parseFloat(look[k+1])||1;grams=n*10;break}
+        if(/^\d+([.,]\d+)?$/.test(t)){const v=parseFloat(t.replace(",","."));if(v>=20&&f[3]>=20&&k===0&&!gramWord(look[k-1]||"")){grams=v}else qty=v;break}
+        if(QWORDS[t]!=null){qty=QWORDS[t];if(t==="paio"&&look[k+1]==="un")qty=2;break}
+        if(/^(di|del|della|dei|delle|d|fetta|fette|tazza|bicchiere|porzione|piatto|vasetto|manciata|po)$/.test(t))continue;
+        break;
+      }
+      if(grams==null)grams=(qty!=null?qty:f[5])*f[3];
+      items.push({name:w.join(" "),grams:Math.round(grams),kcal:f[1]*grams/100,prot:f[2]*grams/100,pos:i});
+    }
+  }
+  if(!items.length)return null;
+  items.sort((a,b)=>a.pos-b.pos);
+  const kcal=Math.round(items.reduce((s,x)=>s+x.kcal,0)),prot=Math.round(items.reduce((s,x)=>s+x.prot,0));
+  const det=items.map(x=>x.name+" "+x.grams+" g "+Math.round(x.kcal)).join(" · ");
+  const unknown=toks.filter((t,ix)=>!used[ix]&&t.length>3&&!/^\d/.test(t)&&!/^(alla|allo|alle|agli|sulla|sulle|nella|nelle|nello|dalla|dalle|della|delle|dello|degli|quella|questo|questa|poco|tanta|tanto|fette|fetta|tazza|bicchiere|porzione|piatto|vasetto|cucchiaio|cucchiaino|cucchiai|cucchiaini|grammi|manciata|paio|qualche|mezzo|mezza|quattro|cinque|senza|insieme|anche|sopra|dentro|fresco|fresca|integrale|light|grande|piccolo|piccola|grandi|piccoli|bianco|bianca|rosso|rossa|cotto|cotta|crudo|cruda|grigliato|grigliata|griglia|piastra|forno|bollito|bollita|lessa|lesso)$/.test(t));
+  return {kcal,prot,det,unknown};
+}
+
+const useLocal=()=>STANDALONE||!sample;
+let localT={};
+function autoLocal(k){
+  const l=cur(),txt=(l.meals&&l.meals[k]||"").trim(),e=l.est&&l.est[k];
+  if(!txt){if(e){const n={...l.est};delete n[k];l.est=n}}
+  else if(!(e&&e.text===txt)){
+    const r=localEstimate(txt);
+    if(r)l.est={...(l.est||{}),[k]:{kcal:r.kcal,prot:r.prot,det:r.det,unknown:r.unknown,src:"locale",text:txt}};
+    else if(e&&e.src==="locale"){const n={...l.est};delete n[k];l.est=n}
+  }
+  renderEst(k);renderBudget();renderHero();renderWeek();queue();
+}
 /* ---------- week ---------- */
 function renderWeek(){
   const end=new Date(weekStart);end.setDate(end.getDate()+6);
@@ -940,7 +1098,7 @@ function renderEst(k){
     w.querySelector("button").onclick=()=>{const kc=Math.round(+ik.value);if(!(kc>0))return;
       cur().est={...(cur().est||{}),[k]:{kcal:kc,prot:Math.round(+ip.value||0),det:"Inserito a mano",src:"manuale",text:txt}};queue();renderEst(k);renderBudget();renderHero();renderWeek()};
     el.appendChild(w)};
-  if(!e){if(STANDALONE||!sample){el.innerHTML='<span class="sub">Scrivi le kcal se le conosci (etichetta, app, scanner) oppure usa ✓ Come da piano.</span>';manual()}
+  if(!e){if(STANDALONE||!sample){el.innerHTML='<span class="sub">Non riconosco questi cibi: prova a scriverli in modo semplice (es. "2 fette biscottate, burro, marmellata") oppure scrivi tu le kcal qui sotto.</span>';manual()}
     else el.innerHTML='<span class="sub">Non ancora calcolato: premi ⚡ Calcola (o esci dal campo e lo calcolo da sola).</span>';return}
   const plan=pkOf(i,k);
   let flag="";
@@ -950,10 +1108,11 @@ function renderEst(k){
     else flag='<span class="flag g">in linea col piano</span>';}
   else if(k==="extra"&&e.kcal>250)flag='<span class="flag y">extra corposo</span>';
   const isStale=e.text!==txt;
-  const stale=isStale?'<span class="sub">'+(STANDALONE||!sample?'Hai modificato il testo: aggiorna le kcal qui sotto.':'Hai modificato il testo: premi ⚡ Calcola per aggiornare.')+'</span>':'';
+  const stale=isStale?'<span class="sub">'+(STANDALONE||!sample?'Sto ricalcolando…':'Hai modificato il testo: premi ⚡ Calcola per aggiornare.')+'</span>':'';
   el.innerHTML='<span>≈ <span class="k">'+e.kcal+'</span> kcal · '+e.prot+' g proteine</span>'+flag+(e.det?'<span class="sub"></span>':'')+stale;
   if(e.det)el.querySelector(".sub").textContent=e.det;
-  if(isStale&&(STANDALONE||!sample))manual();
+  if(e.unknown&&e.unknown.length&&!isStale){const u=document.createElement("span");u.className="sub";u.textContent="Non ho riconosciuto: "+e.unknown.slice(0,5).join(", ")+". Se mancano calorie, correggi qui sotto.";el.appendChild(u)}
+  if(useLocal()&&!isStale){const b=document.createElement("button");b.type="button";b.className="linkbtn";b.textContent="✏️ Correggi kcal";b.onclick=()=>{b.remove();manual()};el.appendChild(b)}
 }
 let estBusy={};
 async function estimate(k,auto){
@@ -994,7 +1153,7 @@ function renderDiet(){
       '<div class="est" id="est-'+k+'" aria-live="polite"></div>';
     if(!isExtra)m.querySelector(".plan").textContent=foodOf(i,k);
     const ta=m.querySelector("textarea");ta.id="meal-"+k;ta.value=(l.meals&&l.meals[k])||"";
-    ta.oninput=()=>{cur().meals={...cur().meals,[k]:ta.value};queue();renderWeek();renderEst(k);renderBudget()};
+    ta.oninput=()=>{cur().meals={...cur().meals,[k]:ta.value};queue();renderWeek();renderEst(k);renderBudget();if(useLocal()){clearTimeout(localT[k]);localT[k]=setTimeout(()=>autoLocal(k),500)}};
     ta.onblur=()=>{if(ta.value.trim()&&!STANDALONE)estimate(k,true)};
     const cb2=m.querySelector("#calc-"+k);if(cb2)cb2.onclick=()=>estimate(k,false);
     const mp=m.querySelector(".mp");
@@ -1009,6 +1168,7 @@ function renderDiet(){
   TIPS.forEach(t=>{const li=document.createElement("li");li.textContent=t;tips.appendChild(li)});
   dt.appendChild(tips);
   renderBudget();rows.forEach(([k])=>renderEst(k));
+  if(useLocal())rows.forEach(([k])=>{const t=(l.meals&&l.meals[k]||"").trim();if(t&&!(l.est&&l.est[k]))setTimeout(()=>autoLocal(k),0)});
 }
 function renderLogFields(){const l=cur();$("steps").value=l.steps??"";$("burned").value=l.burned??"";impMsg("watchStatus","");$("weight").value=l.weight??"";$("notes").value=l.notes||"";renderEnergy()}
 function renderEnergy(){
@@ -1384,7 +1544,7 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!$("exSheet").hidde
 /* ---------- capabilities ---------- */
 (async()=>{
   try{db=window.claude&&await window.claude.use("db")}catch(e){db=null}
-  if(!db){if(!profile)showProfile(true);status("Salvataggio locale");const b=$("banner");b.textContent=STANDALONE?"I tuoi dati restano solo su questo telefono. Ogni tanto salva un backup da 👤 Profilo.":"Il diario si salva solo su questo dispositivo. Aprilo da claude.ai col tuo account per sincronizzarlo.";b.hidden=false;return}
+  if(!db){if(!profile)showProfile(true);status("Salvataggio locale");const b=$("banner");b.textContent=STANDALONE?(EMBED?"I tuoi dati restano solo su questo telefono, in questo browser: non cancellare i dati del browser.":"I tuoi dati restano solo su questo telefono. Ogni tanto salva un backup da 👤 Profilo."):"Il diario si salva solo su questo dispositivo. Aprilo da claude.ai col tuo account per sincronizzarlo.";b.hidden=false;return}
   logCol=db.collection("log");status("Collegato",true);
   profRef=db.doc("cfg/profile");
   menuRef=db.doc("cfg/menu");
