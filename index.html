@@ -927,7 +927,7 @@ function autoLocal(k){
 }
 
 /* ---------- on-device OCR (no Claude) ---------- */
-const canOCR=()=>STANDALONE&&!EMBED;
+function canOCR(){return STANDALONE&&!EMBED}
 let ocrLib=null;
 function loadTesseract(){
   if(window.Tesseract)return Promise.resolve(window.Tesseract);
