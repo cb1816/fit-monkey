@@ -164,6 +164,7 @@ h1 em{font-style:normal;background:linear-gradient(90deg,var(--pink),var(--orang
 @media (max-width:480px){.prefcols{grid-template-columns:1fr}}
 .prefcols .field input{margin-top:4px}
 .linkbtn{background:none;border:0;padding:0;color:var(--violet);font:700 13px var(--body);cursor:pointer;text-decoration:underline}
+.swaprow{display:flex;gap:12px;flex-wrap:wrap}
 .mh .pk{font-size:12px;font-weight:700;color:var(--muted);text-transform:none;letter-spacing:0}
 .mrow{display:flex;gap:8px;flex-wrap:wrap}
 .chip.ghost{background:var(--surface);color:var(--mc);border:2px solid var(--mc)}
@@ -510,7 +511,8 @@ function kgHistory(id){
 }
 function cur(){const k=key(sel);if(!cache[k])cache[k]=blank();if(!cache[k].scans)cache[k].scans=[];return cache[k]}
 function hasMeals(l){return !!(l&&l.meals&&Object.values(l.meals).some(v=>v&&String(v).trim()))||!!(l&&l.scans&&l.scans.length)}
-function workoutDone(l,i){return !!(l&&((l.done&&l.done.length>=Math.ceil(PLAN[i].ex.length*0.6))||actsMin(l)>=30))}
+function WP(i,l){return (l&&l.swap!=null&&PLAN[l.swap])?l.swap:i}
+function workoutDone(l,i){return !!(l&&((l.done&&l.done.length>=Math.ceil(PLAN[WP(i,l)].ex.length*0.6))||actsMin(l)>=30))}
 
 
 /* ---------- profile ---------- */
@@ -531,7 +533,7 @@ function targets(pr){
     active:ok(m.active)?m.active:Math.max(floor,r50(maintA+adj)),rest:ok(m.rest)?m.rest:Math.max(floor,r50(maintR+adj)),
     prot:ok(m.prot)?m.prot:Math.round(w*(pr.goal==="bulk"?1.8:1.65)/5)*5,bmi:w/((h/100)**2),auto:Math.round(bmrAuto)};
 }
-function kcalTarget(i,l){const t=targets();const base=PLAN[i].type==="Riposo"||PLAN[i].type==="Camminata"&&i===1?t.rest:t.active;return base+actBonus(l)}
+function kcalTarget(i,l){const t=targets();const base=isRestDay(WP(i,l))?t.rest:t.active;return base+actBonus(l)}
 /* sports: name, emoji, MET [leggera, media, intensa] */
 const SPORTS=[["Bici","🚴",[4,6.8,10]],["Spinning","🚲",[5.5,7,8.5]],["Piscina / nuoto","🏊",[5,7,9.8]],["Acquagym","💦",[3.5,5.5,7]],["Ballo","💃",[4.5,6,7.8]],["Zumba","🪩",[5.5,6.5,8]],["Danza","🩰",[4.8,5.5,6.8]],["Corsa","🏃",[7,9.8,11.5]],["Camminata extra","🚶",[3,3.8,5]],["Trekking","🥾",[5.3,6,7.8]],["Pilates","🧘",[2.8,3,3.8]],["Yoga","🕉️",[2.5,3,4]],["Tennis","🎾",[5,7.3,8]],["Padel","🏓",[5,6,7.3]],["Pallavolo","🏐",[3,4,6]],["Boxe / kickboxing","🥊",[5.5,7.8,10]],["Arrampicata","🧗",[5.8,7.3,8]],["Pattinaggio","⛸️",[5,7,9]],["Sci / snowboard","⛷️",[4.3,5.3,8]],["Altro","✨",[3.5,5,7]]];
 const INT_LBL=["leggera","media","intensa"];
@@ -542,7 +544,7 @@ function actsMin(l){return (l&&l.acts||[]).reduce((a,x)=>a+(x.min||0),0)}
 function actBonus(l){if(l&&typeof l.burned==="number"&&l.burned>800)return 0;return Math.round(actsNet(l)/2/10)*10}
 function protTarget(){return targets().prot}
 function isRestDay(i){return PLAN[i].type==="Riposo"||(PLAN[i].type==="Camminata"&&i===1)}
-function maintenance(i,l){if(l&&typeof l.burned==="number"&&l.burned>800)return l.burned;const t=targets();return (isRestDay(i)?t.maintR:t.maintA)+actsNet(l)}
+function maintenance(i,l){if(l&&typeof l.burned==="number"&&l.burned>800)return l.burned;const t=targets();return (isRestDay(WP(i,l))?t.maintR:t.maintA)+actsNet(l)}
 function mainMealsLogged(l){let n=0;for(const k of ["colazione","pranzo","spuntino","cena"]){if(l&&l.est&&l.est[k]&&l.meals&&String(l.meals[k]||"").trim())n++}return n}
 function dayComplete(l,i){const need=PLANK[i].pranzo[0]===0?3:3;return mainMealsLogged(l)>=need}
 const gfmt=g=>(g>0?"+":"−")+Math.abs(Math.round(g)).toLocaleString("it-IT")+" g";
@@ -926,14 +928,14 @@ function renderWeek(){
   let wo=0,logged=0,active=0,steps=0;
   for(let i=0;i<7;i++){
     const d=new Date(weekStart);d.setDate(d.getDate()+i);
-    const l=cache[key(d)], t=TYPES[PLAN[i].type];
+    const l=cache[key(d)], t=TYPES[PLAN[WP(i,l)].type];
     const b=document.createElement("button");
     b.className="day"+(key(d)===key(today)?" today":"");
     b.style.setProperty("--c",t.c1);
     b.setAttribute("aria-pressed",String(key(d)===key(sel)));
-    b.setAttribute("aria-label",FULL[i]+" "+d.getDate()+" · "+PLAN[i].type);
+    b.setAttribute("aria-label",FULL[i]+" "+d.getDate()+" · "+PLAN[WP(i,l)].type);
     const w=workoutDone(l,i),m=hasMeals(l);
-    if(w)wo++; if(m)logged++; if(PLAN[i].type!=="Riposo")active++; if(l&&l.steps)steps+=l.steps;
+    if(w)wo++; if(m)logged++; if(PLAN[WP(i,l)].type!=="Riposo")active++; if(l&&l.steps)steps+=l.steps;
     const over=dayState(l,i)==="r";
     b.innerHTML='<span class="dn">'+DAYNAMES[i]+'</span><span class="dd">'+d.getDate()+'</span><span class="dots">'+(w?'<i class="dot w"></i>':'')+(m?'<i class="dot '+(over?'o':'m')+'"></i>':'')+(!w&&!m?'<i class="dot"></i>':'')+'</span>';
     b.onclick=()=>{flush();sel=d;renderAll()};
@@ -948,19 +950,27 @@ function ring(pct,label){
   return '<svg class="ring" viewBox="0 0 84 84" aria-hidden="true"><circle cx="42" cy="42" r="'+r+'" fill="none" stroke="rgba(255,255,255,.28)" stroke-width="9"/><circle cx="42" cy="42" r="'+r+'" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-dasharray="'+(c*p)+' '+c+'" transform="rotate(-90 42 42)"/><text x="42" y="47" text-anchor="middle" font-size="15">'+label+'</text></svg>';
 }
 function renderHero(){
-  const i=wIdx(sel),p=PLAN[i],l=cur(),t=TYPES[p.type];
+  const i=wIdx(sel),l=cur(),p=PLAN[WP(i,l)],t=TYPES[p.type];
   const done=l.done.length,tot=p.ex.length;
   const kc=dayTotals(l).kcal;
   const isToday=key(sel)===key(today);
   const h=$("hero");h.style.setProperty("--hero",t.hero);
-  h.innerHTML='<span class="tag">'+p.type+'</span><div><div class="when">'+FULL[i]+' '+sel.getDate()+' '+MONTHS[sel.getMonth()]+(isToday?' · oggi':'')+'</div><h2>'+esc(p.title)+'</h2></div>'+
+  h.innerHTML='<span class="tag">'+p.type+'</span><div><div class="when">'+FULL[i]+' '+sel.getDate()+' '+MONTHS[sel.getMonth()]+(isToday?' · oggi':'')+'</div><h2>'+esc(p.title)+'</h2>'+(WP(i,l)!==i?'<div class="when">al posto di: '+esc(PLAN[i].title)+'</div>':'')+'</div>'+
    '<div class="ring-row">'+ring(done/tot,Math.round(done/tot*100)+'%')+
    '<div class="tgt"><span>Obiettivo <b>~'+kcalTarget(i,l).toLocaleString("it-IT")+' kcal</b></span><span>Proteine <b>~'+protTarget()+' g</b> · Passi <b>10.000</b></span>'+(kc?'<span>Mangiato finora: <b>≈ '+kc.toLocaleString("it-IT")+' kcal</b></span>':'')+'</div></div>';
 }
 function renderWorkout(){
-  const i=wIdx(sel),p=PLAN[i],l=cur(),t=TYPES[p.type];
+  const i=wIdx(sel),l=cur(),p=PLAN[WP(i,l)],t=TYPES[p.type];
   const wk=$("workout");wk.style.setProperty("--c1",t.c1);wk.style.setProperty("--c2",t.c2);
-  wk.innerHTML='<h3>Workout <span class="badge" id="wcount"></span></h3><div class="bar"><i id="wbar"></i></div><p class="note">'+esc(p.wnote)+'</p>';
+  wk.innerHTML='<h3>Workout <span class="badge" id="wcount"></span></h3><div class="bar"><i id="wbar"></i></div>'+
+    '<div class="swaprow"><button type="button" class="linkbtn" id="swapBtn">🔄 Oggi faccio un altro allenamento</button>'+(WP(i,l)!==i?' <button type="button" class="linkbtn" id="swapReset">↩ torna al piano</button>':'')+'</div>'+
+    '<div class="sports" id="swapList" hidden></div><p class="note">'+esc(p.wnote)+'</p>';
+  const SESS=[[0,"🏋️ Palestra A"],[4,"🏋️ Palestra B · gambe e glutei"],[2,"🏠 Circuito a casa"],[1,"🚶 Camminata svelta"],[5,"🥾 Camminata lunga"],[3,"🛋️ Riposo attivo"],[6,"🧘 Stretching"]];
+  const sl=wk.querySelector("#swapList");
+  sl.innerHTML=SESS.map(([j,lab])=>'<button type="button" class="sport'+(WP(i,l)===j?' on':'')+'" data-j="'+j+'">'+lab+'</button>').join("");
+  wk.querySelector("#swapBtn").onclick=()=>{sl.hidden=!sl.hidden};
+  sl.querySelectorAll("button").forEach(b=>b.onclick=()=>{const j=+b.dataset.j;const L=cur();L.swap=(j===i?null:j);L.done=[];queue();renderDay();renderWeek();toast(j===i?"Allenamento del piano":"Allenamento cambiato ✓")});
+  const rs=wk.querySelector("#swapReset");if(rs)rs.onclick=()=>{const L=cur();L.swap=null;L.done=[];queue();renderDay();renderWeek()};
   const list=document.createElement("div");list.className="list";
   p.ex.forEach(([id,nm,rx])=>{
     const row=document.createElement("div");row.className="ex";
@@ -1003,7 +1013,7 @@ function renderWorkout(){
 let actPick=null;
 function renderActs(){
   const box=$("actsBox");if(!box)return;const l=cur(),i=wIdx(sel);
-  const swap=PLAN[i].type==="Camminata"||PLAN[i].type==="Riposo"?'<p class="note">Oggi puoi sostituire la camminata con bici, piscina, ballo o quello che ti va: conta lo stesso.</p>':'';
+  const swap=PLAN[WP(i,l)].type==="Camminata"||PLAN[WP(i,l)].type==="Riposo"?'<p class="note">Oggi puoi sostituire la camminata con bici, piscina, ballo o quello che ti va: conta lo stesso.</p>':'';
   let h='<p class="subh">Altre attività</p>'+swap;
   if(l.acts&&l.acts.length){
     h+='<div class="list">'+l.acts.map((a,ix)=>{const s=SPORTS.find(x=>x[0]===a.type)||SPORTS[SPORTS.length-1];return '<div class="act-item"><span class="aemo">'+s[1]+'</span><div class="si"><b>'+esc(a.type)+'</b><small>'+a.min+' min · '+INT_LBL[a.int]+' · ≈ '+a.kcal+' kcal</small></div><button class="x" data-rm="'+ix+'" aria-label="Rimuovi">×</button></div>'}).join("")+'</div>';
@@ -1033,7 +1043,7 @@ function renderActs(){
   }
 }
 function afterActs(){renderActs();renderHero();renderWeek();renderBudget();queue()}
-function wcount(){const p=PLAN[wIdx(sel)],n=cur().done.length;$("wcount").textContent=n+"/"+p.ex.length+" fatti";$("wbar").style.width=(n/p.ex.length*100)+"%"}
+function wcount(){const p=PLAN[WP(wIdx(sel),cur())],n=cur().done.length;$("wcount").textContent=n+"/"+p.ex.length+" fatti";$("wbar").style.width=(n/p.ex.length*100)+"%"}
 function renderScans(){
   const l=cur(),box=$("scans");
   box.innerHTML='<h3>Prodotti controllati <span class="badge">'+Math.round(l.scans.reduce((s,x)=>s+(x.kcal||0),0))+' kcal</span></h3>';
