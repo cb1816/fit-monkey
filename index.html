@@ -165,6 +165,14 @@ h1 em{font-style:normal;background:linear-gradient(90deg,var(--pink),var(--orang
 .prefcols .field input{margin-top:4px}
 .linkbtn{background:none;border:0;padding:0;color:var(--violet);font:700 13px var(--body);cursor:pointer;text-decoration:underline}
 .swaprow{display:flex;gap:12px;flex-wrap:wrap}
+.tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;background:var(--surface);border:2px solid var(--line);border-radius:18px;padding:5px;position:sticky;top:env(safe-area-inset-top,0px);z-index:5}
+.tabs button{border:0;background:none;color:var(--muted);font:700 14px var(--body);padding:10px 4px;border-radius:13px;cursor:pointer}
+.tabs button[aria-selected="true"]{background:var(--fg);color:var(--bg)}
+.tabpanel{display:flex;flex-direction:column;gap:16px}
+.fab{display:none!important}
+.morebtn{align-self:flex-start;border:2px dashed var(--line);background:none;color:var(--fg);border-radius:14px;padding:10px 14px;font:700 14px var(--body);cursor:pointer}
+.budget details summary{cursor:pointer;font-weight:700;font-size:14px;color:var(--violet)}
+.budget details[open] summary{margin-bottom:8px}
 .mh .pk{font-size:12px;font-weight:700;color:var(--muted);text-transform:none;letter-spacing:0}
 .mrow{display:flex;gap:8px;flex-wrap:wrap}
 .chip.ghost{background:var(--surface);color:var(--mc);border:2px solid var(--mc)}
@@ -341,11 +349,15 @@ canvas#confetti{position:fixed;inset:0;pointer-events:none;z-index:50;width:100%
   </section>
 
   <section class="hero" id="hero"></section>
-  <section class="card" id="workout"></section>
-  <section class="card" id="scans"></section>
-  <section class="card" id="diet"></section>
-
-  <section class="card">
+  <nav class="tabs" role="tablist" aria-label="Sezioni">
+    <button type="button" role="tab" data-tab="workout" aria-selected="true">💪 Allenamento</button>
+    <button type="button" role="tab" data-tab="food" aria-selected="false">🍽️ Cibo</button>
+    <button type="button" role="tab" data-tab="day" aria-selected="false">📝 Giornata</button>
+  </nav>
+  <div class="tabpanel" data-panel="workout"><section class="card" id="workout"></section></div>
+  <div class="tabpanel" data-panel="food" hidden><section class="card" id="diet"></section><section class="card" id="scans" hidden></section></div>
+  <div class="tabpanel" data-panel="day" hidden>
+  <section class="card" id="journal">
     <h3>La mia giornata</h3>
     <div class="grid2">
       <label class="field"><span>Passi</span><input type="number" id="steps" inputmode="numeric" placeholder="es. 9500"></label>
@@ -358,6 +370,7 @@ canvas#confetti{position:fixed;inset:0;pointer-events:none;z-index:50;width:100%
     <div class="field"><span>Energia</span><div class="scale" id="energy"></div></div>
     <label class="field"><span>Note (fame, ciclo, umore, aperitivo…)</span><textarea id="notes" rows="2"></textarea></label>
   </section>
+  </div>
 </div>
 </div>
 
@@ -1056,7 +1069,7 @@ function renderWorkout(){
   const ab=document.createElement("div");ab.className="acts";ab.id="actsBox";wk.appendChild(ab);renderActs();
   wcount();
 }
-let actPick=null;
+let actPick=null,actsOpen=false;
 function renderActs(){
   const box=$("actsBox");if(!box)return;const l=cur(),i=wIdx(sel);
   const swap=PLAN[WP(i,l)].type==="Camminata"||PLAN[WP(i,l)].type==="Riposo"?'<p class="note">Oggi puoi sostituire la camminata con bici, piscina, ballo o quello che ti va: conta lo stesso.</p>':'';
@@ -1066,6 +1079,9 @@ function renderActs(){
     const bon=actBonus(l);
     h+='<p class="note">Bruciate in più: ≈ '+actsNet(l)+' kcal'+(bon?' · il tuo obiettivo di oggi sale di '+bon+' kcal (metà di quelle bruciate)':'')+'</p>';
   }
+  if(!actPick&&!actsOpen){h+='<button type="button" class="morebtn" id="actsMore">➕ Ho fatto un\'altra attività (bici, piscina, ballo…)</button>';box.innerHTML=h;
+    box.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{cur().acts.splice(+b.dataset.rm,1);afterActs()});
+    $("actsMore").onclick=()=>{actsOpen=true;renderActs()};return}
   h+='<div class="sports">'+SPORTS.map(s=>'<button type="button" class="sport'+(actPick&&actPick.type===s[0]?' on':'')+'" data-s="'+esc(s[0])+'"><span>'+s[1]+'</span>'+esc(s[0])+'</button>').join("")+'</div>';
   if(actPick){
     h+='<div class="actform"><b>'+esc(actPick.type)+'</b>'+
@@ -1082,16 +1098,16 @@ function renderActs(){
     box.querySelectorAll(".qmin button").forEach(b=>b.onclick=()=>{actPick.min=+b.dataset.m;renderActs()});
     box.querySelectorAll(".qint button").forEach(b=>b.onclick=()=>{actPick.int=+b.dataset.i;renderActs()});
     $("actMin").oninput=e=>{actPick.min=Math.max(0,+e.target.value||0);upd();box.querySelectorAll(".qmin button").forEach(b=>b.setAttribute("aria-pressed",String(+b.dataset.m===actPick.min)))};
-    $("actCancel").onclick=()=>{actPick=null;renderActs()};
+    $("actCancel").onclick=()=>{actPick=null;actsOpen=false;renderActs()};
     $("actAdd").onclick=()=>{if(!actPick.min)return;const l=cur();l.acts=[...(l.acts||[]),{type:actPick.type,min:actPick.min,int:actPick.int,kcal:actKcal(actPick.type,actPick.min,actPick.int)}];
-      const done=actsMin(l)>=30;actPick=null;afterActs();if(done&&actsMin(l)-l.acts[l.acts.length-1].min<30)confetti()};
+      const done=actsMin(l)>=30;actPick=null;actsOpen=false;afterActs();if(done&&actsMin(l)-l.acts[l.acts.length-1].min<30)confetti()};
     upd();
   }
 }
 function afterActs(){renderActs();renderHero();renderWeek();renderBudget();queue()}
 function wcount(){const p=PLAN[WP(wIdx(sel),cur())],n=cur().done.length;$("wcount").textContent=n+"/"+p.ex.length+" fatti";$("wbar").style.width=(n/p.ex.length*100)+"%"}
 function renderScans(){
-  const l=cur(),box=$("scans");
+  const l=cur(),box=$("scans");box.hidden=!l.scans.length;
   box.innerHTML='<h3>Prodotti controllati <span class="badge">'+Math.round(l.scans.reduce((s,x)=>s+(x.kcal||0),0))+' kcal</span></h3>';
   if(!l.scans.length){const e=document.createElement("div");e.className="empty";e.textContent="Scansiona un prodotto col bottone in basso: ti dico se è in linea col piano e lo aggiungo qui.";box.appendChild(e);return}
   const list=document.createElement("div");list.className="list";
@@ -1129,6 +1145,7 @@ function renderBudget(){
   const planSum=["colazione","pranzo","spuntino","cena"].reduce((s,k)=>s+((l.est&&l.est[k]&&String(l.meals&&l.meals[k]||"").trim())?pkOf(i,k)[0]:0),0);
   const eatenMain=["colazione","pranzo","spuntino","cena"].reduce((s,k)=>s+((l.est&&l.est[k]&&String(l.meals&&l.meals[k]||"").trim())?(l.est[k].kcal||0):0),0);
   const wb=weekBalance();
+  const dd=document.createElement("details");dd.innerHTML="<summary>Dettagli: differenza dal piano e stima del peso</summary>";box.appendChild(dd);
   const g=document.createElement("div");g.className="calc";
   const cell=(lab,val,sub,cls)=>'<div><small>'+lab+'</small><b class="'+(cls||"")+'">'+val+'</b>'+(sub?'<span class="note" style="display:block">'+sub+'</span>':'')+'</div>';
   const cl=v=>v>0?"pos":"neg";
@@ -1141,8 +1158,8 @@ function renderBudget(){
     html+=cell("Questa settimana",(wk>0?"+":"−")+Math.abs(wk).toFixed(2).replace(".",",")+" kg","su "+wb.days+" giorn"+(wb.days===1?"o":"i")+" completi",cl(wk));
     html+=cell("Se continui così",(month>0?"+":"−")+Math.abs(month).toFixed(1).replace(".",",")+" kg/mese",month<-1.2?"ritmo veloce: occhio al tono muscolare":month<0?"ritmo giusto per snellire":"così stai aumentando",cl(month));
   }
-  g.innerHTML=html;box.appendChild(g);
-  const n=document.createElement("p");n.className="note";n.textContent="Stime: 7.700 kcal ≈ 1 kg di grasso. Il peso sulla bilancia oscilla di più per acqua, sale e ciclo: guarda la media di 2–3 settimane.";box.appendChild(n);
+  g.innerHTML=html;dd.appendChild(g);
+  const n=document.createElement("p");n.className="note";n.textContent="Stime: 7.700 kcal ≈ 1 kg di grasso. Il peso sulla bilancia oscilla di più per acqua, sale e ciclo: guarda la media di 2–3 settimane.";dd.appendChild(n);
 }
 function renderEst(k){
   const i=wIdx(sel),l=cur(),el=$("est-"+k);if(!el)return;
@@ -1196,8 +1213,9 @@ async function estimate(k,auto){
 }
 function renderDiet(){
   const i=wIdx(sel),p=PLAN[i],l=cur(),dt=$("diet");
-  dt.innerHTML='<h3>Alimentazione <span class="badge">'+(menu?'✨ dieta su misura':'piano → mangiato')+'</span></h3><div class="budget" id="budget"></div><details class="prefs" id="prefs"'+(menu?'':' open')+'></details>';
+  dt.innerHTML='<h3>Alimentazione <button type="button" class="chip ghost" id="scanOpen" style="--mc:var(--violet)">📷 Scansiona prodotto</button></h3><div class="budget" id="budget"></div><details class="prefs" id="prefs"'+(menu?'':' open')+'></details>';
   renderPrefs();
+  $("scanOpen").onclick=openSheet;
   const rows=[...MEALS,["extra","Extra / aperitivo","var(--lime)"]];
   rows.forEach(([k,label,col])=>{
     const isExtra=k==="extra",pk=pkOf(i,k);
@@ -1220,9 +1238,6 @@ function renderDiet(){
     };
     dt.appendChild(m);
   });
-  const tips=document.createElement("ul");tips.className="tips";
-  TIPS.forEach(t=>{const li=document.createElement("li");li.textContent=t;tips.appendChild(li)});
-  dt.appendChild(tips);
   renderBudget();rows.forEach(([k])=>renderEst(k));
   if(useLocal())rows.forEach(([k])=>{const t=(l.meals&&l.meals[k]||"").trim();if(t&&!(l.est&&l.est[k]))setTimeout(()=>autoLocal(k),0)});
 }
@@ -1237,7 +1252,12 @@ function renderEnergy(){
   });
 }
 function renderDay(){renderHero();renderWorkout();renderScans();renderDiet();renderLogFields()}
-function renderAll(){actPick=null;weekStart=startOfWeek(sel);renderWeek();renderDay()}
+let curTab=(()=>{try{return localStorage.getItem("fm-tab")||"workout"}catch(e){return "workout"}})();
+function showTab(t){curTab=t;document.querySelectorAll(".tabs [data-tab]").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.tab===t)));
+  document.querySelectorAll(".tabpanel").forEach(p=>p.hidden=p.dataset.panel!==t);try{localStorage.setItem("fm-tab",t)}catch(e){}}
+document.querySelectorAll(".tabs [data-tab]").forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
+showTab(curTab);
+function renderAll(){actPick=null;actsOpen=false;weekStart=startOfWeek(sel);renderWeek();renderDay()}
 
 $("steps").oninput=e=>{cur().steps=e.target.value===""?null:Number(e.target.value);queue();renderWeek()};
 $("weight").oninput=e=>{cur().weight=e.target.value===""?null:Number(e.target.value);queue()};
