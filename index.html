@@ -1720,8 +1720,7 @@ function drawPose(svg,anim,pose){
 function startAnim(svg,anim){
   cancelAnimationFrame(animReq);animT0=performance.now();
   const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const dur=anim.dur||1100;
-  if(reduce){drawPose(svg,anim,anim.b);return}
+  const dur=(anim.dur||1100)*(reduce?1.6:1);
   const tick=now=>{
     if(!animPaused){
       let t; // phases: move, hold 400ms, return, hold 400ms
