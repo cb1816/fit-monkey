@@ -173,6 +173,7 @@ h1 em{font-style:normal;background:linear-gradient(90deg,var(--pink),var(--orang
 .morebtn{align-self:flex-start;border:2px dashed var(--line);background:none;color:var(--fg);border-radius:14px;padding:10px 14px;font:700 14px var(--body);cursor:pointer}
 .budget details summary{cursor:pointer;font-weight:700;font-size:14px;color:var(--violet)}
 .budget details[open] summary{margin-bottom:8px}
+.closebtn{flex-basis:100%;margin-top:4px}
 .mh .pk{font-size:12px;font-weight:700;color:var(--muted);text-transform:none;letter-spacing:0}
 .mrow{display:flex;gap:8px;flex-wrap:wrap}
 .chip.ghost{background:var(--surface);color:var(--mc);border:2px solid var(--mc)}
@@ -1027,7 +1028,9 @@ function renderWorkout(){
   const SESS=[[0,"🏋️ Palestra A"],[4,"🏋️ Palestra B · gambe e glutei"],[2,"🏠 Circuito a casa"],[1,"🚶 Camminata svelta"],[5,"🥾 Camminata lunga"],[3,"🛋️ Riposo attivo"],[6,"🧘 Stretching"]];
   const sl=wk.querySelector("#swapList");
   sl.innerHTML=SESS.map(([j,lab])=>'<button type="button" class="sport'+(WP(i,l)===j?' on':'')+'" data-j="'+j+'">'+lab+'</button>').join("");
-  wk.querySelector("#swapBtn").onclick=()=>{sl.hidden=!sl.hidden};
+  sl.insertAdjacentHTML("beforeend",'<button type="button" class="btn alt closebtn" id="swapClose">✕ Chiudi</button>');
+  const sb=wk.querySelector("#swapBtn");sb.onclick=()=>{sl.hidden=!sl.hidden};
+  wk.querySelector("#swapClose").onclick=()=>{sl.hidden=true};
   sl.querySelectorAll("button").forEach(b=>b.onclick=()=>{const j=+b.dataset.j;const L=cur();L.swap=(j===i?null:j);L.done=[];queue();renderDay();renderWeek();toast(j===i?"Allenamento del piano":"Allenamento cambiato ✓")});
   const rs=wk.querySelector("#swapReset");if(rs)rs.onclick=()=>{const L=cur();L.swap=null;L.done=[];queue();renderDay();renderWeek()};
   const list=document.createElement("div");list.className="list";
@@ -1082,7 +1085,7 @@ function renderActs(){
   if(!actPick&&!actsOpen){h+='<button type="button" class="morebtn" id="actsMore">➕ Ho fatto un\'altra attività (bici, piscina, ballo…)</button>';box.innerHTML=h;
     box.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{cur().acts.splice(+b.dataset.rm,1);afterActs()});
     $("actsMore").onclick=()=>{actsOpen=true;renderActs()};return}
-  h+='<div class="sports">'+SPORTS.map(s=>'<button type="button" class="sport'+(actPick&&actPick.type===s[0]?' on':'')+'" data-s="'+esc(s[0])+'"><span>'+s[1]+'</span>'+esc(s[0])+'</button>').join("")+'</div>';
+  h+='<div class="sports">'+SPORTS.map(s=>'<button type="button" class="sport'+(actPick&&actPick.type===s[0]?' on':'')+'" data-s="'+esc(s[0])+'"><span>'+s[1]+'</span>'+esc(s[0])+'</button>').join("")+'</div>'+(actPick?'':'<button type="button" class="btn alt closebtn" id="actsClose">✕ Chiudi</button>');
   if(actPick){
     h+='<div class="actform"><b>'+esc(actPick.type)+'</b>'+
       '<div class="field"><span>Durata</span><div class="seg qmin">'+[15,30,45,60,90].map(m=>'<button type="button" data-m="'+m+'" aria-pressed="'+(actPick.min===m)+'">'+m+'\'</button>').join("")+'</div>'+
@@ -1093,6 +1096,7 @@ function renderActs(){
   box.innerHTML=h;
   box.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{cur().acts.splice(+b.dataset.rm,1);afterActs()});
   box.querySelectorAll(".sport").forEach(b=>b.onclick=()=>{actPick={type:b.dataset.s,min:actPick&&actPick.min||45,int:actPick?actPick.int:1};renderActs()});
+  const ac=$("actsClose");if(ac)ac.onclick=()=>{actsOpen=false;actPick=null;renderActs()};
   if(actPick){
     const upd=()=>{$("actK").textContent="≈ "+actKcal(actPick.type,actPick.min,actPick.int)+" kcal"};
     box.querySelectorAll(".qmin button").forEach(b=>b.onclick=()=>{actPick.min=+b.dataset.m;renderActs()});
