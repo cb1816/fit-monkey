@@ -606,6 +606,11 @@ $("pf-save").onclick=async()=>{
 /* ---- watch import ---- */
 function impMsg(id,t,err,busy){const s=$(id);if(!t){s.hidden=true;return}s.hidden=false;s.className="status"+(err?" err":"");s.innerHTML=(busy?'<span class="spin"></span>':'')+esc(t)}
 async function readWatchShot(file,id){
+  if((!sample||!sampleImages)&&canOCR()){
+    try{const txt=await ocrText(file,m=>impMsg(id,m,false,true));const r=parseWatch(txt);
+      if(!r.steps&&!r.tot){impMsg(id,"Non trovo passi o calorie nello screenshot. Prova la schermata riepilogo del giorno.",true);return null}
+      return {date:null,period:"giorno",steps:r.steps,tot:r.tot,act:r.act,rest:r.rest};
+    }catch(err){impMsg(id,"Non riesco ad avviare il lettore: serve la connessione internet la prima volta.",true);return null}}
   if(!sample||!sampleImages){impMsg(id,"La lettura delle foto non è disponibile qui: apri l'app da claude.ai.",true);return null}
   impMsg(id,"Leggo lo screenshot…",false,true);
   const prompt="Questo è uno screenshot dell'app di uno smartwatch o di un'app salute (Apple Salute/Fitness, Garmin, Fitbit, Samsung Health, Huawei, Google Fit, Xiaomi…). Estrai i numeri visibili. Rispondi SOLO con JSON: {\"data\": \"YYYY-MM-DD\" o null, \"periodo\": \"giorno\" o \"media\", \"passi\": numero o null, \"kcal_totali\": calorie totali bruciate nel giorno (attive + a riposo) o null, \"kcal_attive\": calorie attive/movimento o null, \"kcal_riposo\": calorie a riposo/basali o null, \"leggibile\": true/false}";
@@ -683,7 +688,7 @@ $("watchShotIn").onchange=async e=>{
 };
 $("burned").oninput=e=>{cur().burned=e.target.value===""?null:Number(e.target.value);queue();renderBudget()};
 if(STANDALONE){
-  $("backupCard").hidden=EMBED;$("pf-shot").hidden=true;$("watchShot").closest(".field").hidden=true;$("btnLabel").hidden=true;
+  $("backupCard").hidden=EMBED;$("pf-shot").hidden=!canOCR();$("watchShot").closest(".field").hidden=!canOCR();$("btnLabel").hidden=!canOCR();
   $("bkExport").onclick=()=>{
     const data={app:"fit-monkey",v:1,at:new Date().toISOString(),log:cache,cfg,profile,menu};
     const blob=new Blob([JSON.stringify(data)],{type:"application/json"});
@@ -919,6 +924,47 @@ function autoLocal(k){
     else if(e&&e.src==="locale"){const n={...l.est};delete n[k];l.est=n}
   }
   renderEst(k);renderBudget();renderHero();renderWeek();queue();
+}
+
+/* ---------- on-device OCR (no Claude) ---------- */
+const canOCR=()=>STANDALONE&&!EMBED;
+let ocrLib=null;
+function loadTesseract(){
+  if(window.Tesseract)return Promise.resolve(window.Tesseract);
+  if(ocrLib)return ocrLib;
+  ocrLib=new Promise((res,rej)=>{const sc=document.createElement("script");sc.src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";sc.onload=()=>res(window.Tesseract);sc.onerror=()=>{ocrLib=null;rej(new Error("load"))};document.head.appendChild(sc)});
+  return ocrLib;
+}
+async function ocrText(file,onMsg){
+  onMsg("Preparo il lettore (solo la prima volta ci mette un po')…");
+  const T=await loadTesseract();
+  const cv=await loadImage(file,1800);
+  const w=await T.createWorker(["ita","eng"],1,{logger:m=>{if(m.status==="recognizing text")onMsg("Leggo la foto… "+Math.round((m.progress||0)*100)+"%")}});
+  try{const r=await w.recognize(cv);return (r&&r.data&&r.data.text)||""}finally{w.terminate()}
+}
+const ocrNum=v=>{if(v==null)return null;let t=String(v).replace(/\s/g,"");if(/^\d{1,3}([.,]\d{3})+$/.test(t))t=t.replace(/[.,]/g,"");else t=t.replace(",",".");const x=parseFloat(t);return isFinite(x)?x:null};
+function parseLabel(txt){
+  const t=txt.toLowerCase().replace(/\|/g," ").replace(/[‘’']/g,"").replace(/o(?=\d)/g,"0");
+  const grab=re=>{const m=t.match(re);return m?ocrNum(m[1]):null};
+  let kcal=grab(/(\d{2,4}(?:[.,]\d)?)\s*k\s?cal/);
+  if(kcal==null){const kj=grab(/(\d{2,4}(?:[.,]\d)?)\s*k\s?j/);if(kj)kcal=Math.round(kj/4.184)}
+  if(kcal==null)kcal=grab(/(?:energia|energy|valore energetico)[^\d]{0,30}?(\d{2,4})/);
+  const prot=grab(/protein[ea]?[^\d]{0,20}?(\d{1,2}(?:[.,]\d+)?)/);
+  const sugar=grab(/zuccheri[^\d]{0,20}?(\d{1,2}(?:[.,]\d+)?)/)??grab(/sugars?[^\d]{0,20}?(\d{1,2}(?:[.,]\d+)?)/);
+  const fat=grab(/grassi(?!\s*saturi)[^\d]{0,20}?(\d{1,2}(?:[.,]\d+)?)/)??grab(/\bfat[^\d]{0,20}?(\d{1,2}(?:[.,]\d+)?)/);
+  if(kcal!=null&&(kcal<1||kcal>950))kcal=null;
+  return {kcal,prot,sugar,fat};
+}
+function parseWatch(txt){
+  const t=txt.toLowerCase().replace(/\|/g," ");
+  const pick=(res)=>{for(const re of res){const m=t.match(re);if(m){const v=ocrNum(m[1]);if(v!=null)return Math.round(v)}}return null};
+  const steps=pick([/(\d[\d.,]{2,7})\s*(?:passi|steps)/,/(?:passi|steps)[^\d]{0,25}(\d[\d.,]{2,7})/]);
+  const act=pick([/(?:attiv[ea]|active|movimento|move|esercizio)[^\d]{0,25}(\d[\d.,]{1,6})\s*(?:k?cal)?/,/(\d[\d.,]{1,6})\s*(?:k?cal)\s*(?:attiv|active)/]);
+  const rest=pick([/(?:riposo|resting|basal[ei]?|a riposo)[^\d]{0,25}(\d[\d.,]{2,6})/]);
+  let tot=pick([/(?:totali|total|bruciate|burned|consumate|spese)[^\d]{0,25}(\d[\d.,]{2,6})/,/(\d[\d.,]{2,6})\s*(?:k?cal)\s*(?:totali|total)/]);
+  if(!tot&&act&&rest)tot=act+rest;
+  if(!tot&&act)tot=act+targets().bmr;
+  return {steps:steps&&steps>50?steps:null,tot:tot&&tot>800&&tot<6000?tot:null,act,rest};
 }
 /* ---------- week ---------- */
 function renderWeek(){
@@ -1331,6 +1377,12 @@ const num=v=>{const x=typeof v==="string"?parseFloat(v):v;return typeof x==="num
 $("fileLabel").onchange=async e=>{
   const f=e.target.files&&e.target.files[0];if(!f)return;
   $("resultBox").innerHTML="";
+  if((!sample||!sampleImages)&&canOCR()){
+    try{const txt=await ocrText(f,m=>setScan(m,false,true));const r=parseLabel(txt);
+      if(r.kcal==null){setScan("Non riesco a leggere le calorie. Fotografa solo la tabella nutrizionale, dritta, vicina e con buona luce.",true);return}
+      showProduct({name:"Prodotto (da etichetta)",brand:"Controlla che i numeri siano giusti",kcal:r.kcal,prot:r.prot,sugar:r.sugar,fat:r.fat,ns:"",portion:100,src:"lettura foto"});setScan("");
+    }catch(err){setScan("Non riesco ad avviare il lettore: serve la connessione internet la prima volta.",true)}
+    return}
   if(!sample||!sampleImages){setScan("L'analisi delle foto non è disponibile in questa vista.",true);return}
   setScan("Leggo l'etichetta…",false,true);
   const prompt="Questa è una foto di una confezione alimentare o della sua tabella nutrizionale. Estrai i valori per 100 g (o 100 ml). Se un valore non è leggibile usa null. Rispondi SOLO con JSON: {\"name\": nome prodotto in italiano, \"brand\": marca o \"\", \"kcal\": numero, \"prot\": numero, \"sugar\": numero, \"fat\": numero, \"portion\": porzione consigliata in grammi o 100, \"readable\": true/false}";
@@ -1588,7 +1640,7 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!$("exSheet").hidde
 (async()=>{
   try{sample=window.claude&&await window.claude.use("sample")}catch(e){sample=null}
   if(sample){const caps=await sample.limits().catch(()=>null);sampleImages=!!(caps&&caps.images)}
-  $("btnLabel").disabled=!(sample&&sampleImages);
+  $("btnLabel").disabled=!(sample&&sampleImages)&&!canOCR();
 })();
 </script>
 
